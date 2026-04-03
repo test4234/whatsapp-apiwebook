@@ -16,7 +16,7 @@ let AUTH_TOKEN = null;
 let TOKEN_TIME = null;
 
 // ===============================
-// ✅ 1. GENERATE TOKEN
+// ✅ TOKEN MANAGEMENT
 // ===============================
 async function generateToken() {
   try {
@@ -40,9 +40,6 @@ async function generateToken() {
   }
 }
 
-// ===============================
-// ✅ 2. ENSURE TOKEN VALID
-// ===============================
 async function ensureValidToken() {
   if (!AUTH_TOKEN || Date.now() - TOKEN_TIME > 50 * 60 * 1000) {
     console.log("🔄 Refreshing token...");
@@ -51,26 +48,25 @@ async function ensureValidToken() {
 }
 
 // ===============================
-// 🔧 HELPER: CLEAN NUMBER
+// 🔧 HELPER
 // ===============================
 function formatNumber(number) {
-  // remove + if exists
   number = number.replace("+", "");
-
-  // remove country code if included
-  if (number.startsWith("91")) {
-    return number.slice(2);
-  }
-
+  if (number.startsWith("91")) return number.slice(2);
   return number;
 }
 
 // ===============================
-// ✅ 3. WEBHOOK
+// 📦 WHATSAPP ROUTER (LAYER)
 // ===============================
-app.post("/webhook", async (req, res) => {
+const whatsappRouter = express.Router();
+
+// ===============================
+// 📩 WEBHOOK
+// ===============================
+whatsappRouter.post("/webhook", async (req, res) => {
   try {
-    console.log("📩 Webhook hit");
+    console.log("📩 WhatsApp Webhook hit");
 
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
@@ -87,11 +83,15 @@ app.post("/webhook", async (req, res) => {
     if (message && message.from) {
       const from = message.from;
       const text = message.text?.body || "";
+      const type = message.type;
 
-      console.log(`📨 Incoming: ${from} → ${text}`);
+      console.log(`📨 ${type} from ${from}: ${text}`);
 
-      // 🔁 Reply
-      await sendMessage(from, `${text || "Hello"}`);
+      if (type === "text") {
+        await sendMessage(from, text || "Hello");
+      } else {
+        console.log(`📎 Unsupported type: ${type}`);
+      }
     }
 
     // ===============================
@@ -109,7 +109,7 @@ app.post("/webhook", async (req, res) => {
 });
 
 // ===============================
-// ✅ 4. SEND CHAT MESSAGE
+// 📤 SEND MESSAGE
 // ===============================
 async function sendMessage(to, message) {
   try {
@@ -128,7 +128,7 @@ async function sendMessage(to, message) {
           type: "CHAT",
           senderId: SENDER_ID,
           countryCode: "91",
-          mobileNumber: cleanNumber, // ✅ FIXED
+          mobileNumber: cleanNumber,
           message: message
         },
         headers: {
@@ -139,7 +139,6 @@ async function sendMessage(to, message) {
 
     console.log("✅ Message sent");
   } catch (err) {
-    // 🔁 Retry if token expired
     if (err.response?.data?.code === 800) {
       console.log("🔄 Token expired, retrying...");
       await generateToken();
@@ -151,7 +150,7 @@ async function sendMessage(to, message) {
 }
 
 // ===============================
-// ✅ 5. SEND TEMPLATE
+// 📤 SEND TEMPLATE
 // ===============================
 async function sendTemplate(to, templateName, variables = "") {
   try {
@@ -171,9 +170,9 @@ async function sendTemplate(to, templateName, variables = "") {
           senderId: SENDER_ID,
           countryCode: "91",
           mobileNumber: cleanNumber,
-          templateName: templateName,
+          templateName,
           langId: "en_US",
-          variables: variables
+          variables
         },
         headers: {
           authToken: AUTH_TOKEN
@@ -188,9 +187,9 @@ async function sendTemplate(to, templateName, variables = "") {
 }
 
 // ===============================
-// ✅ 6. TEST APIs
+// 🧪 TEST APIs
 // ===============================
-app.post("/send", async (req, res) => {
+whatsappRouter.post("/send", async (req, res) => {
   const { to, message } = req.body;
 
   try {
@@ -201,7 +200,7 @@ app.post("/send", async (req, res) => {
   }
 });
 
-app.post("/send-template", async (req, res) => {
+whatsappRouter.post("/send-template", async (req, res) => {
   const { to, templateName, variables } = req.body;
 
   try {
@@ -213,10 +212,15 @@ app.post("/send-template", async (req, res) => {
 });
 
 // ===============================
+// 🌐 MOUNT ROUTER
+// ===============================
+app.use("/whatsapp", whatsappRouter);
+
+// ===============================
 // ✅ HEALTH
 // ===============================
 app.get("/", (req, res) => {
-  res.send("🚀 Message Central Backend Running");
+  res.send("🚀 Messaging Service Running");
 });
 
 // ===============================
